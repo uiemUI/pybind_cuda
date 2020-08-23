@@ -5,7 +5,6 @@
 #include <device_launch_parameters.h>
 #include <device_functions.h>
 
-
 __global__ void add_kernel(float *inputleft, float *inputright, float *output, int count)
 {
     int idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -14,41 +13,156 @@ __global__ void add_kernel(float *inputleft, float *inputright, float *output, i
     output[idx] = inputleft[idx] + inputright[idx];
 }
 
-void addOnCuda(float *inputleft, float *inputright, float* output,int count)
+template <int TILE_WIDTH>
+__global__ void matrix_MulG(float *_A, float *_B, float *_C, int M, int K, int N)
+{
+    __shared__ float subM[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float subN[TILE_WIDTH][TILE_WIDTH];
+    int x = threadIdx.x + blockIdx.x * blockDim.x; // 17
+    int y = threadIdx.y + blockIdx.y * blockDim.y; //y为行，x为列 //0
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    //int Tp = TILE_WIDTH;//调试用
+    // if (y >= M || x >= N)
+    //     {
+    //         subM[ty][tx] = 0.;
+    //         subN[ty][tx] = 0.;
+            
+    //         return;
+    //     }
+    float tmp = 0.;
+    for (int i = 0; i < ((K + TILE_WIDTH - 1) / TILE_WIDTH); ++i)
+    {
+        if ((tx + i * TILE_WIDTH) < K)
+            subM[ty][tx] = _A[y * K + tx + i * TILE_WIDTH];
+        else
+        {
+            subM[ty][tx] = 0.;
+        }
+        if ((ty + i * TILE_WIDTH) < K)
+            subN[ty][tx] = _B[(ty + i * TILE_WIDTH) * N + y];
+        else
+        {
+            subN[ty][tx] = 0.;
+        }
+        __syncthreads();
+        for (int j = 0; j < TILE_WIDTH; ++j)
+        {
+            tmp += subM[ty][j] * subN[j][tx];
+        }
+        __syncthreads();
+    }
+    if(y<M && x<N)  //天啦停止条件在最后
+        _C[y * N + x] = tmp; 
+
+}
+
+void addOnCuda(float *inputleft, float *inputright, float *output, int count)
 {
     //const int out_n = count;
     //float *output = new float[count];
     //float *output = (float *)malloc(count * sizeof(float));
+    constexpr const int NSTREAM = 2;
+    cudaStream_t stream[NSTREAM];
+    for (int i = 0; i < NSTREAM; ++i)
+    {
+        CHECK(cudaStreamCreate(&stream[i]));
+    }
     float *d_a, *d_b, *d_c;
     cudaMalloc((void **)&d_a, count * sizeof(float));
     cudaMalloc((void **)&d_b, count * sizeof(float));
     cudaMalloc((void **)&d_c, count * sizeof(float));
-    cudaMemcpy(d_a, inputleft, count * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_b, inputright, count * sizeof(float), cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_a, inputleft, count * sizeof(float), cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_b, inputright, count * sizeof(float), cudaMemcpyHostToDevice);
+    CHECK(cudaMemcpyAsync(d_a, inputleft, count * sizeof(float), cudaMemcpyHostToDevice, stream[0]));
+    CHECK(cudaMemcpyAsync(d_b, inputright, count * sizeof(float), cudaMemcpyHostToDevice, stream[1]));
     dim3 threadPerBlock(512);
     dim3 blocksPer((count + threadPerBlock.x - 1) / threadPerBlock.x);
     add_kernel<<<blocksPer, threadPerBlock>>>(d_a, d_b, d_c, count);
-    cudaMemcpy(output, d_c, count * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaFree(d_a);
-    cudaFree(d_b);
-    cudaFree(d_c);
+    CHECK(cudaMemcpyAsync(output, d_c, count * sizeof(float), cudaMemcpyDeviceToHost, stream[1]));
+    CHECK(cudaFree(d_a));
+    CHECK(cudaFree(d_b));
+    CHECK(cudaFree(d_c));
+    for (int i = 0; i < NSTREAM; ++i)
+    {
+        CHECK(cudaStreamDestroy(stream[i]));
+    }
     //return output;
 }
 
-// int main(int argc, char const *argv[])
-// {
-//     float left[2] = {1.0,
-//                   2.0};
-//     float right[2] = {1.0, 2.0};
-//     auto result = addOnCuda(left, right, 2);
-//     for (size_t i = 0; i < 2; i++)
-//     {
-//         std::cout << result[i] << std::endl;
+void Gpu_mul(float *ptrLeft, float *ptrRight,float* ptrResult,int M,int K,int N)
+{
+    
 
-//     }
-//     free(result);
-//     return 0;
-// }
+    constexpr const int NSTREAM = 2;
+    cudaStream_t stream[NSTREAM];
+    for (int i = 0; i < NSTREAM; ++i)
+    {
+        CHECK(cudaStreamCreate(&stream[i]));
+    }
+    float *d_a, *d_b, *d_c;
+    cudaMalloc((void **)&d_a, M * K * sizeof(float));
+    cudaMalloc((void **)&d_b, K * N * sizeof(float));
+    cudaMalloc((void **)&d_c, M * N * sizeof(float));
+    // cudaMemcpy(d_a, inputleft, count * sizeof(float), cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_b, inputright, count * sizeof(float), cudaMemcpyHostToDevice);
+    CHECK(cudaMemcpyAsync(d_a, ptrLeft, M * K * sizeof(float), cudaMemcpyHostToDevice, stream[0]));
+    CHECK(cudaMemcpyAsync(d_b, ptrRight, K * N * sizeof(float), cudaMemcpyHostToDevice, stream[1]));
+    constexpr const int TP = 16;
+    dim3 threadsPer(TP, TP);
+    dim3 blocksPer((M + TP - 1) / TP, (N + TP - 1) / TP);
+    matrix_MulG<TP><<<blocksPer, threadsPer>>>(d_a, d_b, d_c, M, K, N);
+    CHECK(cudaMemcpyAsync(ptrResult, d_c, M * N * sizeof(float), cudaMemcpyDeviceToHost, stream[1]));
+    CHECK(cudaFree(d_a));
+    CHECK(cudaFree(d_b));
+    CHECK(cudaFree(d_c));
+    for (int i = 0; i < NSTREAM; ++i)
+    {
+        CHECK(cudaStreamDestroy(stream[i]));
+    }
+}
+
+void test1()
+{
+    
+    float left[4] = {1., 2., 3., 4.};
+    float right[4] = {1.,2.,3.,4.};
+    float result[4] = {0.};
+    Gpu_mul(left, right, result, 4, 4, 4);
+    for (size_t i = 0; i < 2; i++)
+    {
+        std::cout << "[  ";
+        for (int j = 0; j < 2; j++)
+            std::cout << result[i] << "  ";
+        std::cout << " ] \n";
+    }
+}
+int main(int argc, char const *argv[])
+{
+    float left[17 * 17] = {0.};
+    float right[17*17]={0.};
+
+    for(int i = 0; i <17*17; ++i)
+    {
+        left[i] = 1.;
+        right[i] = 1.;
+    }
+    //auto result = addOnCuda(left, right, 2);
+    float result[17*17] = {0.};
+    Gpu_mul(left, right, result, 17,17,17);
+
+    for (size_t i = 0; i < 17; i++)
+    {
+        std::cout << "[  ";
+        for (int j = 0; j < 17;j++)
+            std::cout << result[i] << "  ";
+        std::cout << " ] \n";
+
+    }
+    //free(result);
+    test1();
+    return 0;
+}
 
 // int main(int argc, char const *argv[])
 // {

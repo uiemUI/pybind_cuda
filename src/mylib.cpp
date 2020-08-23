@@ -31,12 +31,29 @@ py::array_t<float> np_sum(py::array_t<float>& input1, py::array_t<float>& input2
     
     return result;
 }
+py::array_t<float> np_multiply(py::array_t<float> &inLeft, py::array_t<float> &inRight)
+{
+    py::buffer_info bufLeft = inLeft.request(), bufRight = inRight.request();
+    assert(bufLeft.ndim == bufRight.ndim);
+    assert(bufLeft.ndim == 2);
+    assert(bufLeft.shape[1] == bufRight.shape[0]);
+    const int M = bufLeft.shape[0], K = bufLeft.shape[1], N = bufRight.shape[1];
+    auto result = py::array_t<float>(M * N);
+    result.resize({M, N});
 
+    py::buffer_info bufResult = result.request();
+    float *ptrLeft = (float *)bufLeft.ptr,
+          *ptrRight = (float *)bufRight.ptr,
+          *ptrResult = (float *)bufResult.ptr;
+    Gpu_mul(ptrLeft, ptrRight, ptrResult, M, K, N);
+    return result;
+}
 
 PYBIND11_MODULE(mylib, m)
 {
    // m.doc("use cuda and demo");
 
     m.def("np_sum", &np_sum, "Add two Numpy arrays use cuda");
+    m.def("Gpu_mul", &np_multiply, "Multuply tow arrays use cuda");
 }
 

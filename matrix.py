@@ -1,6 +1,7 @@
 from numba import cuda,float32
 import numba
-import numpy
+import numpy as np
+import numpy 
 import math
 import time
 
@@ -33,11 +34,10 @@ def matmul_shared_mem(A, B, C: numpy.ndarray):
 
     tx = cuda.threadIdx.x
     ty = cuda.threadIdx.y
-    if x >= C.shape[0] or y >= C.shape[1]:
-        return
+
     tmp = 0.
     for i in range(int(math.ceil(A.shape[1] / TPB))):
-        if ((ty+i*TPB)<A.shape[1]):
+        if ((ty+i*TPB)<A.shape[1] ):
             sA[tx, ty] = A[x, ty + i * TPB]
         else:
             sA[tx, ty] = 0.
@@ -50,7 +50,8 @@ def matmul_shared_mem(A, B, C: numpy.ndarray):
         for j in range(TPB):
             tmp += sA[tx, j] * sB[j,ty]
         cuda.syncthreads()
-    C[x, y] = tmp
+    if x <C.shape[0] and y < C.shape[1]:
+        C[x, y] = tmp
 
 
 # def matmul_shared_mem(A, B, C):
@@ -62,8 +63,10 @@ def matmul_shared_mem(A, B, C: numpy.ndarray):
 # C = numpy.full((3, 5), 1)
 # matmul_cpu(A, B, C)
 # print(C)
-A = numpy.full((TPB * 100, 15 * 100), 3, dtype=numpy.float)
-B = numpy.full((15 * 100, TPB * 100), 4, numpy.float)
+# A = numpy.full((15*100, 15*100), 3, dtype=numpy.float)
+# B = numpy.full((15*100, 15*100 ), 4, numpy.float)
+A= np.array([[1, 2], [3, 4]]).astype(np.float32)
+B = np.array([[1, 2], [3, 4]]).astype(np.float32)
 C_cpu = numpy.full((A.shape[0], B.shape[1]), 0, numpy.float)
 print("start processing in CPU")
 start_cpu = time.time()
@@ -98,3 +101,4 @@ shared_time = time.time()-start_shared_time
 print("GPU time(Shared memory): " + str(shared_time))
 C_cpu_shared = C_shared_mem.copy_to_host()
 print("whether the two array is equals: " + str((C_numpy == C_cpu_shared).all()))
+print(C_cpu_shared)

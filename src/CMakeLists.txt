@@ -11,8 +11,8 @@ find_package(pybind11 CONFIG REQUIRED)
 if(PYBIND11_FOUND)
     message("found/n")
 endif(PYBIND11_FOUND)
-
-include_directories(${PYTHON_INCLUDE_DIRS} ${PYBIND11_INCLUDE_DIR})
+find_package(CUDA REQUIRED)
+include_directories(${PYTHON_INCLUDE_DIRS} ${PYBIND11_INCLUDE_DIR} ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 # message("lujin" ${PYBIND11_INCLUDE_DIR} "/n" ${PYTHON_INCLUDE_DIRS})
 
 # SET(ARCH "-gencode arch=compute_30,code=sm_30
