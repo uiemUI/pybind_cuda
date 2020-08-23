@@ -22,9 +22,12 @@ include_directories(${PYTHON_INCLUDE_DIRS} ${PYBIND11_INCLUDE_DIR} ${CMAKE_CUDA_
 # SET(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS}   -Xcompiler --compiler-options '-fPIC' ${ARCH}")
 
 
+# CUDA_ADD_EXECUTABLE(CKERNEL  kernel.cu)
 add_library(kernelib SHARED kernel.h kernel.cu)
-pybind11_add_module(mylib SHARED kernel.h  mylib.cpp)
 
+pybind11_add_module(mylib SHARED kernel.h  mylib.cpp)
+target_link_libraries(kernelib  PRIVATE cublas)
+# target_link_libraries(CKERNEL  cublas)
 set_target_properties(mylib kernelib PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
                     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
                     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

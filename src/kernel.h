@@ -23,5 +23,5 @@
 
 
 DLL_EXPORT void addOnCuda(float *inputleft, float *inputright, float *output, int count);
-DLL_EXPORT void Gpu_mul(float *ptrLeft, float *ptrRight, float *ptrResult, int M, int K, int N);
+DLL_EXPORT void Gpu_mul(float *ptrLeft, float *ptrRight, float *ptrResult, int M, int K, int N, int flage=0);
 #endif

@@ -4,7 +4,7 @@
 #include <cuda_runtime_api.h>
 #include <device_launch_parameters.h>
 #include <device_functions.h>
-
+#include <cublas_v2.h>
 __global__ void add_kernel(float *inputleft, float *inputright, float *output, int count)
 {
     int idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -40,7 +40,7 @@ __global__ void matrix_MulG(float *_A, float *_B, float *_C, int M, int K, int N
             subM[ty][tx] = 0.;
         }
         if ((ty + i * TILE_WIDTH) < K)
-            subN[ty][tx] = _B[(ty + i * TILE_WIDTH) * N + y];
+            subN[ty][tx] = _B[(ty + i * TILE_WIDTH) * N + x];
         else
         {
             subN[ty][tx] = 0.;
@@ -56,6 +56,7 @@ __global__ void matrix_MulG(float *_A, float *_B, float *_C, int M, int K, int N
         _C[y * N + x] = tmp; 
 
 }
+
 
 void addOnCuda(float *inputleft, float *inputright, float *output, int count)
 {
@@ -90,7 +91,14 @@ void addOnCuda(float *inputleft, float *inputright, float *output, int count)
     //return output;
 }
 
-void Gpu_mul(float *ptrLeft, float *ptrRight,float* ptrResult,int M,int K,int N)
+void useCublas(float *_A, float *_B, float *_C, int M, int K, int N)
+{
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+    float alpha = 1, beta = 0;
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, _B, N, _A, K, &beta, _C, N);
+}
+void Gpu_mul(float *ptrLeft, float *ptrRight, float *ptrResult, int M, int K, int N,int flage)
 {
     
 
@@ -108,10 +116,21 @@ void Gpu_mul(float *ptrLeft, float *ptrRight,float* ptrResult,int M,int K,int N)
     // cudaMemcpy(d_b, inputright, count * sizeof(float), cudaMemcpyHostToDevice);
     CHECK(cudaMemcpyAsync(d_a, ptrLeft, M * K * sizeof(float), cudaMemcpyHostToDevice, stream[0]));
     CHECK(cudaMemcpyAsync(d_b, ptrRight, K * N * sizeof(float), cudaMemcpyHostToDevice, stream[1]));
+    // CHECK(cudaMemcpy(d_a, ptrLeft, M * K * sizeof(float), cudaMemcpyHostToDevice));
+    // CHECK(cudaMemcpy(d_b, ptrRight, K * N * sizeof(float), cudaMemcpyHostToDevice));
     constexpr const int TP = 16;
     dim3 threadsPer(TP, TP);
     dim3 blocksPer((M + TP - 1) / TP, (N + TP - 1) / TP);
-    matrix_MulG<TP><<<blocksPer, threadsPer>>>(d_a, d_b, d_c, M, K, N);
+    if(flage)
+    {matrix_MulG<TP><<<blocksPer, threadsPer>>>(d_a, d_b, d_c, M, K, N);}
+    else
+    {
+        useCublas(d_a, d_b, d_c, M, K, N);
+    }
+    
+    //useCublas(d_a, d_b, d_c,M,K,N);
+    //matr_MulG<TP><<<blocksPer, threadsPer>>>(d_a, d_b, d_c, M, K, N);
+    //CHECK(cudaMemcpy(ptrResult, d_c, M * N * sizeof(float), cudaMemcpyDeviceToHost));
     CHECK(cudaMemcpyAsync(ptrResult, d_c, M * N * sizeof(float), cudaMemcpyDeviceToHost, stream[1]));
     CHECK(cudaFree(d_a));
     CHECK(cudaFree(d_b));
@@ -128,7 +147,7 @@ void test1()
     float left[4] = {1., 2., 3., 4.};
     float right[4] = {1.,2.,3.,4.};
     float result[4] = {0.};
-    Gpu_mul(left, right, result, 4, 4, 4);
+    Gpu_mul(left, right, result, 2, 2, 2);
     for (size_t i = 0; i < 2; i++)
     {
         std::cout << "[  ";
