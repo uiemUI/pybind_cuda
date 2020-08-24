@@ -33,13 +33,13 @@ __global__ void matrix_MulG(float *_A, float *_B, float *_C, int M, int K, int N
     float tmp = 0.;
     for (int i = 0; i < ((K + TILE_WIDTH - 1) / TILE_WIDTH); ++i)
     {
-        if ((tx + i * TILE_WIDTH) < K)
+        if ((tx + i * TILE_WIDTH) < K && (y<M))
             subM[ty][tx] = _A[y * K + tx + i * TILE_WIDTH];
         else
         {
             subM[ty][tx] = 0.;
         }
-        if ((ty + i * TILE_WIDTH) < K)
+        if ((ty + i * TILE_WIDTH) < K && (x<N))
             subN[ty][tx] = _B[(ty + i * TILE_WIDTH) * N + x];
         else
         {
@@ -146,13 +146,13 @@ void test1()
     
     float left[4] = {1., 2., 3., 4.};
     float right[4] = {1.,2.,3.,4.};
-    float result[4] = {0.};
-    Gpu_mul(left, right, result, 2, 2, 2);
+    float result[4] = {0.,0.,0.,0.};
+    Gpu_mul(left, right, result, 2, 2, 2,1);
     for (size_t i = 0; i < 2; i++)
     {
         std::cout << "[  ";
         for (int j = 0; j < 2; j++)
-            std::cout << result[i] << "  ";
+            std::cout << result[i*2+j] << "  ";
         std::cout << " ] \n";
     }
 }
@@ -168,7 +168,7 @@ int main(int argc, char const *argv[])
     }
     //auto result = addOnCuda(left, right, 2);
     float result[17*17] = {0.};
-    Gpu_mul(left, right, result, 17,17,17);
+    Gpu_mul(left, right, result, 17,17,17,1);
 
     for (size_t i = 0; i < 17; i++)
     {
